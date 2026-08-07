@@ -32,11 +32,13 @@
     "remark-cjk-friendly-gfm-strikethrough": "^2.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "remend": "workspace:*",
     "streamdown": "workspace:*",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@jridgewell/trace-mapping": "^0.3.31",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^25",
     "@types/react": "^19",

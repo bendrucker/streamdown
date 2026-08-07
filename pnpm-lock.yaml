@@ -101,6 +101,9 @@ importers:
       remark-math:
         specifier: ^6.0.0
         version: 6.0.0
+      remend:
+        specifier: workspace:*
+        version: link:../../packages/remend
       streamdown:
         specifier: workspace:*
         version: link:../../packages/streamdown
@@ -111,6 +114,9 @@ importers:
         specifier: ^4.1.13
         version: 4.3.5
     devDependencies:
+      '@jridgewell/trace-mapping':
+        specifier: ^0.3.31
+        version: 0.3.31
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.1.18

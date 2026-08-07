@@ -6,7 +6,8 @@ export default defineConfig({
   format: ["esm"],
   minify: true,
   outDir: "dist",
-  sourcemap: false,
+  // Opt-in so profiling builds can attribute sampled frames to source.
+  sourcemap: process.env.STREAMDOWN_SOURCEMAP === "1",
   external: ["react", "react-dom"],
   treeshake: true,
   splitting: true,
