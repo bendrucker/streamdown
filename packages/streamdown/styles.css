@@ -33,3 +33,31 @@
   animation: var(--sd-animation, sd-fadeIn) var(--sd-duration, 150ms)
     var(--sd-easing, ease) var(--sd-delay, 0ms) both;
 }
+
+/*
+ * The caret has nowhere sensible to sit after a code block or a table, so it is
+ * suppressed while one of those trails the stream. Expressing that in CSS rather
+ * than in the container's class list keeps the container's style constant for the
+ * life of the stream: a container whose class or custom property changes per token
+ * invalidates style for the whole document subtree, which on a large document costs
+ * tens of milliseconds of recalculation per token.
+ *
+ * The second selector covers per-block direction, which wraps each block in a
+ * display:contents element.
+ */
+[data-streamdown="container"]
+  > :last-child:is(
+    [data-streamdown="code-block"][data-incomplete],
+    [data-streamdown="mermaid-block"][data-incomplete],
+    [data-streamdown="table-wrapper"]
+  )::after,
+[data-streamdown="container"]
+  > :last-child:has(
+    > :is(
+        [data-streamdown="code-block"][data-incomplete],
+        [data-streamdown="mermaid-block"][data-incomplete],
+        [data-streamdown="table-wrapper"]
+      ):last-child
+  )::after {
+  content: none;
+}
