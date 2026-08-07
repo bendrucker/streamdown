@@ -9,6 +9,7 @@ import {
   memo,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -275,6 +276,12 @@ const carets = {
   block: " ▋",
   circle: " ●",
 };
+
+// React warns when useLayoutEffect runs during server rendering, and this
+// component renders on the server. Suppression has to land before paint on the
+// client, so the effect stays a layout effect wherever there is a document.
+const useCaretSuppressionEffect =
+  typeof document === "undefined" ? useEffect : useLayoutEffect;
 
 // Combined context for better performance - reduces React tree depth from 5 nested providers to 1
 export interface StreamdownContextType {
@@ -736,6 +743,16 @@ export const Streamdown = memo(
       literalTagContent,
     ]);
 
+    const style = useMemo(
+      () =>
+        caret && isAnimating
+          ? ({
+              "--streamdown-caret": `"${carets[caret]}"`,
+            } as CSSProperties)
+          : undefined,
+      [caret, isAnimating]
+    );
+
     const shouldHideCaret = useMemo(() => {
       if (!isAnimating || blocksToRender.length === 0) {
         return false;
@@ -744,15 +761,52 @@ export const Streamdown = memo(
       return hasIncompleteCodeFence(lastBlock) || hasTable(lastBlock);
     }, [isAnimating, blocksToRender]);
 
-    const style = useMemo(
-      () =>
-        caret && isAnimating && !shouldHideCaret
-          ? ({
-              "--streamdown-caret": `"${carets[caret]}"`,
-            } as CSSProperties)
-          : undefined,
-      [caret, isAnimating, shouldHideCaret]
-    );
+    const containerRef = useRef<HTMLDivElement>(null);
+    const caretHostRef = useRef<Element | null>(null);
+
+    /**
+     * Marking the host is something only the client can do, so the server has to
+     * fall back to what this replaced: leaving the caret off the container
+     * altogether. Server markup would otherwise carry a caret after a table or
+     * an open fence until hydration ran, which is a frame of exactly the output
+     * the suppression exists to prevent.
+     *
+     * Reading this during the first client render as well is what keeps
+     * hydration matching. The container's class then changes once, when the flag
+     * flips, on a document no longer than whatever the server sent. Every change
+     * after that is an attribute on one element, which is the point.
+     */
+    const [hydrated, setHydrated] = useState(false);
+    useEffect(() => setHydrated(true), []);
+
+    /**
+     * The caret trails whatever element ends the document, and that element
+     * belongs to the consumer whenever they override a renderer, so nothing
+     * Streamdown emits is guaranteed to be there to select on. Marking the
+     * element itself after the commit reads the same markdown source the
+     * suppression has always been derived from, and works for any renderer.
+     *
+     * The alternative is a class or custom property on the container, which is
+     * what this replaced: either one changing invalidates style for every
+     * element beneath it, and on a long document that costs tens of
+     * milliseconds every time the last block changes kind. The attribute sits
+     * in the rightmost compound of the selector, so only its own element
+     * recalculates. React never removes an attribute it did not set, and a
+     * same-valued toggleAttribute is not a mutation, so the common tick does
+     * nothing at all.
+     */
+    useCaretSuppressionEffect(() => {
+      const host = shouldHideCaret
+        ? (containerRef.current?.lastElementChild ?? null)
+        : null;
+      const marked = caretHostRef.current;
+      if (marked === host) {
+        return;
+      }
+      marked?.removeAttribute("data-sd-caret-hidden");
+      host?.setAttribute("data-sd-caret-hidden", "");
+      caretHostRef.current = host;
+    });
 
     // Static mode: simple rendering without streaming features
     if (mode === "static") {
@@ -802,11 +856,13 @@ export const Streamdown = memo(
                   className={prefixedCn(
                     // Use [&>*] arbitrary variant syntax for Tailwind v3 + v4 compat (v3 lacks the *: variant)
                     "space-y-4 whitespace-normal [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-                    caret && !shouldHideCaret
-                      ? "[&>*:last-child]:after:inline [&>*:last-child]:after:align-baseline [&>*:last-child]:after:content-[var(--streamdown-caret)]"
+                    caret && (hydrated || !shouldHideCaret)
+                      ? "[&>*:last-child:not([data-sd-caret-hidden])]:after:inline [&>*:last-child:not([data-sd-caret-hidden])]:after:align-baseline [&>*:last-child:not([data-sd-caret-hidden])]:after:content-[var(--streamdown-caret)]"
                       : null,
                     className
                   )}
+                  data-streamdown="container"
+                  ref={containerRef}
                   style={style}
                 >
                   {blocksToRender.length === 0 && caret && isAnimating && (

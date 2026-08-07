@@ -882,6 +882,7 @@ const CodeComponent = ({
             "group relative my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2",
             className
           )}
+          data-incomplete={isBlockIncomplete || undefined}
           data-streamdown="mermaid-block"
         >
           <div
