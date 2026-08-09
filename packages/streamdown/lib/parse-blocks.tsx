@@ -92,18 +92,17 @@ const countDoubleDollars = (str: string): number => {
   return count;
 };
 
+// Footnote references: [^1], [^label], etc.
+// Footnote definitions: [^1]: text, [^label]: text, etc.
+export const hasFootnotes = (markdown: string): boolean =>
+  footnoteReferencePattern.test(markdown) ||
+  footnoteDefinitionPattern.test(markdown);
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: "Complex parsing logic that handles multiple markdown edge cases"
 export const parseMarkdownIntoBlocks = (markdown: string): string[] => {
-  // Check if the markdown contains footnotes (references or definitions)
-  // Footnote references: [^1], [^label], etc.
-  // Footnote definitions: [^1]: text, [^label]: text, etc.
-  // Use atomic groups or possessive quantifiers to prevent backtracking
-  const hasFootnoteReference = footnoteReferencePattern.test(markdown);
-  const hasFootnoteDefinition = footnoteDefinitionPattern.test(markdown);
-
   // If footnotes are present, return the entire document as a single block
   // This ensures footnote references and definitions remain in the same mdast tree
-  if (hasFootnoteReference || hasFootnoteDefinition) {
+  if (hasFootnotes(markdown)) {
     return [markdown];
   }
 
