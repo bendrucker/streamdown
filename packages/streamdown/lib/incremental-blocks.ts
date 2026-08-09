@@ -17,10 +17,12 @@ const REPARSED_TRAILING_BLOCKS = 3;
  * Segmentation is otherwise quadratic in the length of the stream, which on a
  * long document is one of the larger costs of rendering it.
  *
- * Markdown that does not extend what came before is parsed in full, so a caller
- * that rewrites or truncates its text stays correct and gives up only the
- * reuse. Healing does rewrite the tail of a stream, and a check that tolerated
- * that measured no faster than this one.
+ * Reuse asks for the settled blocks to still be at the head of the new markdown
+ * and nothing more, because healing rewrites the tail of a stream from one
+ * token to the next. Requiring the whole previous document to be a prefix gives
+ * up on every tick where it did, which on a mixed document is most of the
+ * expensive ones. Markdown that fails even this test is parsed in full, so a
+ * caller that rewrites or truncates its text stays correct and loses the reuse.
  *
  * `<Streamdown>` uses this by default. It is exported for callers passing their
  * own `parseMarkdownIntoBlocksFn`, which replaces it: wrap one of these rather
@@ -28,27 +30,22 @@ const REPARSED_TRAILING_BLOCKS = 3;
  * of one stream, so give every component its own.
  */
 export const createIncrementalBlockParser = () => {
-  let previousMarkdown = "";
-  let previousBlocks: string[] = [];
+  let reusableBlocks: string[] = [];
+  let reusableText = "";
 
-  const remember = (markdown: string, blocks: string[]) => {
-    previousMarkdown = markdown;
-    previousBlocks = blocks;
+  const settle = (blocks: string[]) => {
+    reusableBlocks = blocks.slice(0, -REPARSED_TRAILING_BLOCKS);
+    reusableText = reusableBlocks.join("");
     return blocks;
   };
 
   return (markdown: string): string[] => {
-    if (
-      previousBlocks.length <= REPARSED_TRAILING_BLOCKS ||
-      !markdown.startsWith(previousMarkdown)
-    ) {
-      return remember(markdown, parseMarkdownIntoBlocks(markdown));
+    if (reusableText.length === 0 || !markdown.startsWith(reusableText)) {
+      return settle(parseMarkdownIntoBlocks(markdown));
     }
 
-    const reused = previousBlocks.slice(0, -REPARSED_TRAILING_BLOCKS);
-    const tail = markdown.slice(
-      reused.reduce((length, block) => length + block.length, 0)
-    );
+    const reused = reusableBlocks;
+    const tail = markdown.slice(reusableText.length);
 
     // A footnote anywhere in a document makes the whole of it one block, so a
     // tail that introduces one cannot be segmented on its own. The reused
@@ -57,9 +54,21 @@ export const createIncrementalBlockParser = () => {
     // cannot straddle the split either, since it contains no newline and block
     // boundaries fall between lines.
     if (hasFootnotes(tail)) {
-      return remember(markdown, parseMarkdownIntoBlocks(markdown));
+      return settle(parseMarkdownIntoBlocks(markdown));
     }
 
-    return remember(markdown, [...reused, ...parseMarkdownIntoBlocks(tail)]);
+    const tailBlocks = parseMarkdownIntoBlocks(tail);
+    const blocks = [...reused, ...tailBlocks];
+
+    // Rebuilding the settled text would copy the whole document every tick,
+    // which is the cost this exists to avoid. The blocks the tail pushed out of
+    // the window are the only ones that became settled, so append those.
+    if (tailBlocks.length <= REPARSED_TRAILING_BLOCKS) {
+      return settle(blocks);
+    }
+    const settled = tailBlocks.slice(0, -REPARSED_TRAILING_BLOCKS);
+    reusableBlocks = [...reused, ...settled];
+    reusableText += settled.join("");
+    return blocks;
   };
 };
