@@ -15,6 +15,10 @@ for pid in $(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true); do
 done
 
 if [ "${SKIP_BUILD:-}" != "1" ]; then
+  # Turbopack's persistent cache can outlive a change to a workspace dependency
+  # and serve the previous build with no warning, which turns an A/B comparison
+  # into two runs of A. Discarding it costs a minute and removes the trap.
+  rm -rf .next
   pnpm build
 fi
 

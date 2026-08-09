@@ -22,6 +22,9 @@ node scripts/profile-stream.mjs --only mixed-60k --trace mixed-60k
 
 # Attribute the trace's main-thread time to packages and functions.
 node --max-old-space-size=8192 scripts/analyze-trace.mjs ../../tmp/bench/mixed-60k.trace.json
+
+# Run a scenario with the CPU slowed to a quarter of this machine's speed.
+node scripts/profile-stream.mjs --only mixed-60k --throttle 4
 ```
 
 Summaries land in `tmp/bench/summaries.json`. Scenarios live at the top of
@@ -43,8 +46,22 @@ build` to appear in the attribution.
 A Next server left running keeps serving its previous build, which silently
 turns an A/B comparison into two copies of A. The driver guards against this by
 timing `remend` in isolation before each run and printing the result, so a
-build swap is visible in the output. `bench-server.sh` clears the port before
-starting.
+build swap is visible in the output. `bench-server.sh` clears the port and
+Turbopack's cache before starting, since that cache survives a change to a
+workspace dependency and the isolation timing cannot tell you about a build you
+never produced.
+
+## Throttling the CPU
+
+A development machine has far more headroom than the devices that struggle with
+streaming markdown, and at full speed a change can remove real work without
+moving a single dropped frame. `--throttle 4` runs the scenario with Chrome's
+CPU slowed fourfold, which is where that work starts to cost frames.
+
+The driver times a fixed loop in the page under throttling and prints it next
+to the unthrottled time, because Chrome discards the override if its client
+detaches and nothing else in the output distinguishes a run that lost its
+throttle from one that never had it.
 
 ## What the Numbers Mean
 

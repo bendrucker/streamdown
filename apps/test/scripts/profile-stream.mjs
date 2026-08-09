@@ -8,12 +8,14 @@
  *                                   [--out ../../tmp/bench]
  *                                   [--only <scenario,scenario>]
  *                                   [--trace <scenario>]
+ *                                   [--throttle <cpu slowdown multiplier>]
  */
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { throttleCpu } from "./cpu-throttle.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +30,7 @@ const outDir = resolve(here, readFlag("out", "../../../tmp/bench"));
 const session = readFlag("session", "sd-perf");
 const only = readFlag("only", "").split(",").filter(Boolean);
 const traceScenario = readFlag("trace", "");
+const throttle = Number(readFlag("throttle", "1"));
 
 export const scenarios = [
   { label: "prose-20k", shape: "prose", chars: 20_000 },
@@ -139,9 +142,24 @@ const fingerprint = () => {
   return JSON.parse(output.slice(output.indexOf("[")));
 };
 
+// Emulation overrides are silently dropped if the CDP client detaches, and a
+// run that lost its throttle is indistinguishable from one that never had it.
+// Timing a fixed loop in the page makes the rate observable rather than assumed.
+const spinMs = () => {
+  const output = evaluate(`(() => {
+    const start = performance.now();
+    let total = 0;
+    for (let i = 0; i < 20000000; i += 1) { total += i % 7; }
+    return { ms: Math.round(performance.now() - start), total };
+  })()`);
+  return parseJson(output, "spin").ms;
+};
+
 const remendMs = fingerprint();
+const unthrottledSpinMs = throttle === 1 ? null : spinMs();
 process.stdout.write(
-  `remend in isolation (10k/30k/60k chars): ${remendMs.join("ms / ")}ms\n\n`
+  `remend in isolation (10k/30k/60k chars): ${remendMs.join("ms / ")}ms\n` +
+    `cpu throttling: ${throttle}x\n\n`
 );
 
 const selected = scenarios.filter(
@@ -153,6 +171,14 @@ for (const scenario of selected) {
   const tracing = traceScenario === scenario.label;
   // Reload between scenarios so processor caches and shiki state start cold.
   browser("open", url);
+  const throttling =
+    throttle === 1 ? null : await throttleCpu({ session, url, rate: throttle });
+  if (throttling) {
+    process.stdout.write(
+      `${scenario.label.padEnd(24)} fixed loop under ${throttle}x: ${spinMs()}ms ` +
+        `(unthrottled ${unthrottledSpinMs}ms)\n`
+    );
+  }
   if (tracing) {
     // Only the categories the analyzer reads. The default set produces
     // multi-hundred-megabyte traces for a 15 second run.
@@ -171,6 +197,7 @@ for (const scenario of selected) {
       resolve(outDir, `${scenario.label}.trace.json`)
     );
   }
+  throttling?.close();
   summaries.push(summary);
   process.stdout.write(
     `${scenario.label.padEnd(24)} fps=${String(summary.frames.fps).padStart(6)} ` +
@@ -181,6 +208,6 @@ for (const scenario of selected) {
 
 writeFileSync(
   resolve(outDir, "summaries.json"),
-  `${JSON.stringify({ remendMs, summaries }, null, 2)}\n`
+  `${JSON.stringify({ remendMs, throttle, summaries }, null, 2)}\n`
 );
 process.stdout.write(`\nwrote ${resolve(outDir, "summaries.json")}\n`);
