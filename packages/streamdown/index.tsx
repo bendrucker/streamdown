@@ -72,6 +72,7 @@ export type {
   UrlTransform,
 } from "./lib/markdown";
 export { defaultUrlTransform } from "./lib/markdown";
+export { createIncrementalBlockParser } from "./lib/incremental-blocks";
 export { parseMarkdownIntoBlocks } from "./lib/parse-blocks";
 export type {
   CjkPlugin,

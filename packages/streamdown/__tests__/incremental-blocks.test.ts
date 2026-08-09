@@ -1,3 +1,4 @@
+import remend from "remend";
 import { describe, expect, it } from "vitest";
 import { createIncrementalBlockParser } from "../lib/incremental-blocks";
 import { parseMarkdownIntoBlocks } from "../lib/parse-blocks";
@@ -15,11 +16,12 @@ interface Mismatch {
 // parser re-lexes: shrinking it to one block fails here.
 const firstMismatch = (
   markdown: string,
-  chunkSize: number
+  chunkSize: number,
+  heal: (prefix: string) => string = (prefix) => prefix
 ): Mismatch | null => {
   const parse = createIncrementalBlockParser();
   for (let chars = 1; chars <= markdown.length; chars += chunkSize) {
-    const prefix = markdown.slice(0, chars);
+    const prefix = heal(markdown.slice(0, chars));
     const incremental = parse(prefix);
     const full = parseMarkdownIntoBlocks(prefix);
     if (JSON.stringify(incremental) !== JSON.stringify(full)) {
@@ -76,6 +78,17 @@ describe("createIncrementalBlockParser", () => {
     expect(firstMismatch(markdown, 3)).toBeNull();
     expect(firstMismatch(markdown, 7)).toBeNull();
     expect(firstMismatch(markdown, 24)).toBeNull();
+  });
+
+  // Streamdown segments the healed markdown, and healing closes whatever is
+  // open at the end of it. The text handed to the parser therefore has a tail
+  // that is rewritten from one token to the next rather than simply appended
+  // to, which is the case reuse has to survive to be worth anything.
+  it("matches a full re-parse of healed markdown", () => {
+    const markdown = Object.values(BACKWARD_MERGES).join("\n\n");
+
+    expect(firstMismatch(markdown, 1, remend)).toBeNull();
+    expect(firstMismatch(markdown, 7, remend)).toBeNull();
   });
 
   it("falls back to a full parse when the document is rewritten", () => {
@@ -146,6 +159,12 @@ describe("createIncrementalBlockParser on generated documents", () => {
   it("matches a full re-parse for every prefix", () => {
     for (let seed = 0; seed < 40; seed += 1) {
       expect(firstMismatch(generateDocument(seed), 7)).toBeNull();
+    }
+  });
+
+  it("matches a full re-parse of every healed prefix", () => {
+    for (let seed = 0; seed < 40; seed += 1) {
+      expect(firstMismatch(generateDocument(seed), 7, remend)).toBeNull();
     }
   });
 });

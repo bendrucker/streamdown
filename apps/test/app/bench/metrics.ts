@@ -1,5 +1,3 @@
-import type { IncrementalStats } from "./incremental-blocks";
-
 export interface PhaseStats {
   calls: number;
   max: number;
@@ -23,7 +21,6 @@ export interface FrameStats {
 }
 
 export interface RunSummary {
-  blockParser?: IncrementalStats;
   chars: number;
   commits: { count: number; actualTotal: number; actualMax: number };
   config: Record<string, unknown>;

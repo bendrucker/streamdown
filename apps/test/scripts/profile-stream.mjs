@@ -62,13 +62,6 @@ export const scenarios = [
     shape: "mixed",
     chars: 60_000,
     incrementalBlocks: true,
-    verifyBlocks: true,
-  },
-  {
-    label: "mixed-60k-incremental-timed",
-    shape: "mixed",
-    chars: 60_000,
-    incrementalBlocks: true,
   },
   { label: "code-20k", shape: "code", chars: 20_000 },
   { label: "code-20k-shiki", shape: "code", chars: 20_000, plugins: ["code"] },

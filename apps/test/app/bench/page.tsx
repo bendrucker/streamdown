@@ -13,10 +13,13 @@ import {
   useState,
 } from "react";
 import remend from "remend";
-import { parseMarkdownIntoBlocks, Streamdown } from "streamdown";
+import {
+  createIncrementalBlockParser,
+  parseMarkdownIntoBlocks,
+  Streamdown,
+} from "streamdown";
 import "streamdown/styles.css";
 import { buildDocument, type DocumentShape } from "./document";
-import { createIncrementalBlockParser } from "./incremental-blocks";
 import { Recorder, type RunSummary } from "./metrics";
 
 interface RunConfig {
@@ -38,8 +41,6 @@ interface RunConfig {
   shape?: DocumentShape;
   /** Emit performance.measure entries so phases show on a Chrome trace timeline. */
   userTiming?: boolean;
-  /** Compare each incremental segmentation against a full re-parse. */
-  verifyBlocks?: boolean;
 }
 
 interface ResolvedConfig extends Required<Omit<RunConfig, "label">> {
@@ -61,7 +62,6 @@ const defaults: ResolvedConfig = {
   seed: 42,
   userTiming: false,
   incrementalBlocks: false,
-  verifyBlocks: false,
 };
 
 const pluginRegistry = { code, math, mermaid, cjk };
@@ -90,18 +90,18 @@ const BenchPage = () => {
   > | null>(null);
 
   const incremental = useMemo(
-    () =>
-      config.incrementalBlocks
-        ? createIncrementalBlockParser(3, config.verifyBlocks)
-        : null,
-    [config.incrementalBlocks, config.verifyBlocks]
+    () => (config.incrementalBlocks ? createIncrementalBlockParser() : null),
+    [config.incrementalBlocks]
   );
   incrementalRef.current = incremental;
 
+  // Streamdown segments incrementally on its own, but only when it is left to
+  // pick the segmenter. Timing the phase means supplying one, so the harness
+  // supplies whichever side of the comparison the scenario asks for.
   const instrumentedParseBlocks = useCallback((markdown: string) => {
     const parser = incrementalRef.current;
     return recorder.phase("parseBlocks", () =>
-      parser ? parser.parse(markdown) : parseMarkdownIntoBlocks(markdown)
+      parser ? parser(markdown) : parseMarkdownIntoBlocks(markdown)
     );
   }, []);
 
@@ -162,14 +162,11 @@ const BenchPage = () => {
           const finish = () => {
             recorder.stop();
             setIsStreaming(false);
-            const summary = {
-              ...recorder.summary(
-                resolved.label,
-                { ...resolved },
-                document.length
-              ),
-              blockParser: incrementalRef.current?.stats,
-            };
+            const summary = recorder.summary(
+              resolved.label,
+              { ...resolved },
+              document.length
+            );
             lastSummary = summary;
             benchState = "done";
             resolve(summary);

@@ -13,31 +13,35 @@ import { hasFootnotes, parseMarkdownIntoBlocks } from "./parse-blocks";
 const REPARSED_TRAILING_BLOCKS = 3;
 
 /**
- * Segments an append-only stream without re-lexing the whole document on every
- * token. Segmentation is otherwise quadratic in the length of the stream, which
- * on a long document is one of the larger costs of rendering it.
+ * Segments a growing document without re-lexing the whole of it on every token.
+ * Segmentation is otherwise quadratic in the length of the stream, which on a
+ * long document is one of the larger costs of rendering it.
  *
- * The returned function falls back to a full parse whenever the new text is not
- * an extension of the old, so a caller that rewrites or truncates its markdown
- * stays correct at the cost of the reuse.
+ * Markdown that does not extend what came before is parsed in full, so a caller
+ * that rewrites or truncates its text stays correct and gives up only the
+ * reuse. Healing does rewrite the tail of a stream, and a check that tolerated
+ * that measured no faster than this one.
+ *
+ * `<Streamdown>` uses this by default. It is exported for callers passing their
+ * own `parseMarkdownIntoBlocksFn`, which replaces it: wrap one of these rather
+ * than `parseMarkdownIntoBlocks` to keep the reuse. Each parser holds the state
+ * of one stream, so give every component its own.
  */
 export const createIncrementalBlockParser = () => {
-  let previousText = "";
+  let previousMarkdown = "";
   let previousBlocks: string[] = [];
 
   const remember = (markdown: string, blocks: string[]) => {
-    previousText = markdown;
+    previousMarkdown = markdown;
     previousBlocks = blocks;
     return blocks;
   };
 
   return (markdown: string): string[] => {
-    const extendsPrevious =
-      previousBlocks.length > REPARSED_TRAILING_BLOCKS &&
-      markdown.length >= previousText.length &&
-      markdown.startsWith(previousText);
-
-    if (!extendsPrevious) {
+    if (
+      previousBlocks.length <= REPARSED_TRAILING_BLOCKS ||
+      !markdown.startsWith(previousMarkdown)
+    ) {
       return remember(markdown, parseMarkdownIntoBlocks(markdown));
     }
 
@@ -48,7 +52,7 @@ export const createIncrementalBlockParser = () => {
 
     // A footnote anywhere in a document makes the whole of it one block, so a
     // tail that introduces one cannot be segmented on its own. The reused
-    // prefix is known to be free of them, because a document with footnotes
+    // blocks are known to be free of them, because a document with footnotes
     // never produces enough blocks to be reused in the first place. A footnote
     // cannot straddle the split either, since it contains no newline and block
     // boundaries fall between lines.
