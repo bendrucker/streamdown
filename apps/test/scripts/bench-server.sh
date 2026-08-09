@@ -14,6 +14,16 @@ for pid in $(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true); do
   kill -9 "$pid" 2>/dev/null || true
 done
 
+# A kill that does not take, which happens when the running server is outside
+# whatever confines this script, leaves the old build answering on the port
+# while the new one sits unused on disk. Every measurement after that describes
+# the wrong build and nothing in the output says so.
+sleep 1
+if lsof -nP -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+  echo "port ${port} is still held after kill; stop that server before measuring" >&2
+  exit 1
+fi
+
 if [ "${SKIP_BUILD:-}" != "1" ]; then
   # Turbopack's persistent cache can outlive a change to a workspace dependency
   # and serve the previous build with no warning, which turns an A/B comparison

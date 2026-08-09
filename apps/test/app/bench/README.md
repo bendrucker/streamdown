@@ -46,10 +46,11 @@ build` to appear in the attribution.
 A Next server left running keeps serving its previous build, which silently
 turns an A/B comparison into two copies of A. The driver guards against this by
 timing `remend` in isolation before each run and printing the result, so a
-build swap is visible in the output. `bench-server.sh` clears the port and
-Turbopack's cache before starting, since that cache survives a change to a
-workspace dependency and the isolation timing cannot tell you about a build you
-never produced.
+build swap is visible in the output. That guard only covers builds that were
+produced, so `bench-server.sh` covers the two ways to end up without one: it
+discards Turbopack's cache, which otherwise survives a change to a workspace
+dependency, and it refuses to continue if the previous server is still holding
+the port after being killed.
 
 ## Throttling the CPU
 
