@@ -30,6 +30,7 @@ import { components as defaultComponents } from "./lib/components";
 import { detectTextDirection } from "./lib/detect-direction";
 import { type IconMap, IconProvider } from "./lib/icon-context";
 import { hasIncompleteCodeFence, hasTable } from "./lib/incomplete-code-utils";
+import { createIncrementalBlockParser } from "./lib/incremental-blocks";
 import { type ExtraProps, Markdown, type Options } from "./lib/markdown";
 import { parseMarkdownIntoBlocks } from "./lib/parse-blocks";
 import { PluginContext } from "./lib/plugin-context";
@@ -71,6 +72,7 @@ export type {
   UrlTransform,
 } from "./lib/markdown";
 export { defaultUrlTransform } from "./lib/markdown";
+export { createIncrementalBlockParser } from "./lib/incremental-blocks";
 export { parseMarkdownIntoBlocks } from "./lib/parse-blocks";
 export type {
   CjkPlugin,
@@ -427,6 +429,14 @@ export const Block = memo(
 
 Block.displayName = "Block";
 
+// A caller-supplied segmenter can have any semantics, so only the built-in one
+// is reused across renders.
+const useBlockParser = (parse: (markdown: string) => string[]) => {
+  const incremental = useRef<((markdown: string) => string[]) | null>(null);
+  incremental.current ??= createIncrementalBlockParser();
+  return parse === parseMarkdownIntoBlocks ? incremental.current : parse;
+};
+
 export const Streamdown = memo(
   ({
     children,
@@ -540,9 +550,10 @@ export const Streamdown = memo(
       literalTagContent,
     ]);
 
+    const parseBlocks = useBlockParser(parseMarkdownIntoBlocksFn);
     const blocks = useMemo(
-      () => parseMarkdownIntoBlocksFn(processedChildren),
-      [processedChildren, parseMarkdownIntoBlocksFn]
+      () => parseBlocks(processedChildren),
+      [processedChildren, parseBlocks]
     );
 
     // Initialize displayBlocks with blocks to avoid hydration mismatch
