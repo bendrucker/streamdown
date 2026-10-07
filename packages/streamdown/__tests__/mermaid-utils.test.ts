@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  completeMermaidLines,
   getMermaidSvgSize,
   normalizeMermaidInlineSvg,
   serializeSvgForDownload,
@@ -8,6 +9,22 @@ import {
 
 const BASE64_SVG_DATA_URL_REGEX = /^data:image\/svg\+xml;base64,/;
 const RAW_BR_TAG_REGEX = /<br(?:\s[^/>]*)?>/;
+
+describe("completeMermaidLines", () => {
+  it("drops the last line, which may be cut mid-token", () => {
+    expect(completeMermaidLines("graph TD;\n    A-->B;\n    B--\n")).toBe(
+      "graph TD;\n    A-->B;\n"
+    );
+    expect(completeMermaidLines("graph TD;\n    A-->B;\n    B--")).toBe(
+      "graph TD;\n    A-->B;\n"
+    );
+  });
+
+  it("returns an empty chart while the first line streams", () => {
+    expect(completeMermaidLines("graph T\n")).toBe("");
+    expect(completeMermaidLines("")).toBe("");
+  });
+});
 
 describe("serializeSvgForDownload", () => {
   it("serializes HTML-style SVG markup as XML", () => {

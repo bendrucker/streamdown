@@ -546,31 +546,39 @@ Or disable all Mermaid controls:
 
 When Mermaid diagrams are first streamed in, they appear as code blocks until the diagram syntax is complete. Streamdown's parser ensures the code block is properly formatted during streaming.
 
-### Avoid Continuous Re-rendering
+### Streaming Cadence
 
-Mermaid diagrams are expensive to render. During streaming, you don't want to re-render the diagram on every chunk — that would be slow and cause flickering. Use the `useIsCodeFenceIncomplete` hook to wait until the code block is complete before rendering:
+While a fence streams, Streamdown renders only the chart's complete lines, since a chart cut mid-line usually fails to parse. The last line counts as complete once the next one starts. When the fence closes or the stream stops, the full chart renders.
+
+Mermaid lays out diagrams on the main thread, so each render blocks input and other updates. Streamdown runs one render at a time, and after each render it waits as long as that render took before rendering the latest chart. Use `mermaid.streaming` to render less often:
+
+<TypeTable
+  type={{
+    minInterval: {
+      description:
+        "Minimum time in ms from the start of one render to the start of the next while the fence streams. Streamdown still waits at least as long as the last render took.",
+      type: "number",
+      default: "0",
+    },
+    renderOnClose: {
+      description:
+        "Render only once the fence closes or the stream stops, showing the loading state meanwhile.",
+      type: "boolean",
+      default: "false",
+    },
+  }}
+/>
 
 ```tsx
-import { Streamdown, useIsCodeFenceIncomplete } from "streamdown";
-import { mermaid } from "@streamdown/mermaid";
-
-const MyMermaidBlock = ({ children }) => {
-  const isIncomplete = useIsCodeFenceIncomplete();
-
-  if (isIncomplete) {
-    return (
-      <div className="animate-pulse bg-muted h-48 rounded-lg flex items-center justify-center">
-        <span className="text-muted-foreground">Loading diagram...</span>
-      </div>
-    );
-  }
-
-  // Only render Mermaid once the code block is fully received
-  return <Mermaid chart={children} />;
-};
+<Streamdown
+  plugins={{ mermaid }}
+  mermaid={{ streaming: { minInterval: 1000 } }}
+>
+  {markdown}
+</Streamdown>
 ```
 
-This shows a placeholder while the code block is streaming, then renders the Mermaid diagram only once the closing ` ``` ` is received — without waiting for the entire markdown stream to finish.
+A larger `minInterval` blocks the main thread less and updates the diagram less often. `renderOnClose` blocks the least, but the diagram stays empty until its fence closes.
 
 ### Disable Interactions During Streaming
 

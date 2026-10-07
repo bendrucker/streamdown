@@ -261,6 +261,11 @@ The `mermaid` prop accepts an object with the following properties:
         "Custom React component for handling Mermaid rendering errors",
       type: "React.ComponentType<MermaidErrorComponentProps>",
     },
+    streaming: {
+      description:
+        "How often a diagram re-renders while its fence streams. See [Streaming cadence](/docs/plugins/mermaid#streaming-cadence).",
+      type: "MermaidStreamingOptions",
+    },
   }}
 />
 

@@ -249,9 +249,25 @@ export interface MermaidErrorComponentProps {
   retry: () => void;
 }
 
+export interface MermaidStreamingOptions {
+  /**
+   * Minimum time in ms from the start of one render to the start of the next
+   * while the fence streams. After a render, Mermaid also waits at least as
+   * long as that render took. @default 0
+   */
+  minInterval?: number;
+  /**
+   * Render only once the fence closes or the stream stops, showing the
+   * loading state meanwhile. @default false
+   */
+  renderOnClose?: boolean;
+}
+
 export interface MermaidOptions {
   config?: MermaidConfig;
   errorComponent?: React.ComponentType<MermaidErrorComponentProps>;
+  /** How often a diagram re-renders while its fence streams */
+  streaming?: MermaidStreamingOptions;
 }
 
 export type AllowedTags = Record<string, string[]>;

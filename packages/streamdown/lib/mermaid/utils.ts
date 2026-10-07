@@ -10,6 +10,21 @@ const MAX_WIDTH_DECL_REGEX = /^max-width\s*:/i;
 const SVG_OPEN_TAG_REGEX = /^<svg/i;
 
 /**
+ * Drop the last line of a chart whose fence is still streaming.
+ * The code block text always ends with a newline, even when its last line was
+ * cut mid-token, so that line only counts as complete once the next one starts.
+ */
+export const completeMermaidLines = (chart: string): string => {
+  const withoutTrailingNewline = chart.endsWith("\n")
+    ? chart.slice(0, -1)
+    : chart;
+  return withoutTrailingNewline.slice(
+    0,
+    withoutTrailingNewline.lastIndexOf("\n") + 1
+  );
+};
+
+/**
  * Normalize Mermaid SVG dimensions for inline rendering.
  * Mermaid emits width="100%" with max-width style, which can shrink very wide
  * diagrams until text becomes unreadable.

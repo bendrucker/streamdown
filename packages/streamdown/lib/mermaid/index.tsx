@@ -7,7 +7,11 @@ import type { MermaidConfig } from "../plugin-types";
 import { useCn } from "../prefix-context";
 import { useTranslations } from "../translations-context";
 import { PanZoom } from "./pan-zoom";
-import { getMermaidSvgSize, normalizeMermaidInlineSvg } from "./utils";
+import {
+  completeMermaidLines,
+  getMermaidSvgSize,
+  normalizeMermaidInlineSvg,
+} from "./utils";
 
 interface MermaidProps {
   chart: string;
@@ -106,6 +110,18 @@ export const Mermaid = ({
   const isStreaming = useIsCodeFenceIncomplete();
   const isStreamingRef = useRef(isStreaming);
   const wakeRef = useRef<(() => void) | null>(null);
+  const minInterval = mermaidContext?.streaming?.minInterval ?? 0;
+  const minIntervalRef = useRef(minInterval);
+  const renderOnClose = mermaidContext?.streaming?.renderOnClose ?? false;
+
+  // A chart cut mid-line usually fails to parse, so while the fence streams
+  // only its complete lines are rendered. `null` waits for the fence to close.
+  let renderableChart: string | null = chart;
+  if (isStreaming) {
+    renderableChart = renderOnClose
+      ? null
+      : completeMermaidLines(chart) || null;
+  }
 
   useEffect(() => {
     mountedRef.current = true;
@@ -124,8 +140,12 @@ export const Mermaid = ({
     }
   }, [isStreaming]);
 
+  useEffect(() => {
+    minIntervalRef.current = minInterval;
+  }, [minInterval]);
+
   const pauseWhileStreaming = async (ms: number) => {
-    if (!isStreamingRef.current) {
+    if (!isStreamingRef.current || ms <= 0) {
       return;
     }
     await pause(ms, (wake) => {
@@ -149,7 +169,11 @@ export const Mermaid = ({
       return;
     }
 
-    latestRequestRef.current = { chart, config };
+    if (renderableChart === null) {
+      return;
+    }
+
+    latestRequestRef.current = { chart: renderableChart, config };
     if (inFlightRef.current) {
       // The running loop picks up the latest request when it settles
       return;
@@ -189,11 +213,15 @@ export const Mermaid = ({
           // Mermaid lays out on the main thread. While the fence streams,
           // yield after a layout for as long as it took so streamed updates
           // keep flowing at their own pace and only the latest chart is
-          // rendered next. A failed parse did no layout, so there is nothing
-          // to yield for.
-          if (rendered.ok) {
-            await pauseWhileStreaming(performance.now() - startedAt);
-          }
+          // rendered next. A failed parse did no layout, so only
+          // `minInterval` spaces it from the next render.
+          const elapsed = performance.now() - startedAt;
+          await pauseWhileStreaming(
+            Math.max(
+              rendered.ok ? elapsed : 0,
+              minIntervalRef.current - elapsed
+            )
+          );
           if (!mountedRef.current || request === latestRequestRef.current) {
             return;
           }
@@ -208,7 +236,7 @@ export const Mermaid = ({
     };
 
     renderLatest();
-  }, [chart, config, retryCount, shouldRender, mermaidPlugin]);
+  }, [renderableChart, config, retryCount, shouldRender, mermaidPlugin]);
 
   // Show placeholder when not scheduled to render
   if (!(shouldRender || svgContent || lastValidSvg)) {
@@ -217,7 +245,8 @@ export const Mermaid = ({
     );
   }
 
-  if (isLoading && !svgContent && !lastValidSvg) {
+  const isWaiting = isLoading || renderableChart === null;
+  if (isWaiting && !svgContent && !lastValidSvg) {
     return (
       <div
         className={cn("my-4 flex justify-center p-4", className)}

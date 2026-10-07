@@ -1,7 +1,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { StreamdownContext } from "../index";
+import { type MermaidStreamingOptions, StreamdownContext } from "../index";
 import { BlockIncompleteContext } from "../lib/block-incomplete-context";
 import { Mermaid } from "../lib/mermaid/index";
 import { PluginContext } from "../lib/plugin-context";
@@ -438,11 +438,13 @@ describe("Mermaid Component", () => {
         });
         rerender(streaming(chart, true));
       }
+      // The open fence holds back the last line, which here is all of the
+      // last update
       await waitFor(
         () =>
           expect(mockRender).toHaveBeenLastCalledWith(
             expect.any(String),
-            charts.at(-1)
+            charts.at(-2)
           ),
         { timeout: 3000 }
       );
@@ -600,6 +602,146 @@ describe("Mermaid Component", () => {
         expect(container.querySelector('[data-chart="latest"]')).toBeTruthy();
       });
       expect(mockRender).toHaveBeenCalledTimes(2);
+    });
+
+    // A fence streaming with the given `mermaid.streaming` options
+    const withStreamingOptions =
+      (plugin: DiagramPlugin, streamingOptions?: MermaidStreamingOptions) =>
+      (chart: string, fenceOpen: boolean) => (
+        <PluginContext.Provider value={{ mermaid: plugin }}>
+          <StreamdownContext.Provider
+            value={{
+              ...defaultStreamdownContext,
+              mermaid: { streaming: streamingOptions },
+            }}
+          >
+            <BlockIncompleteContext.Provider value={fenceOpen}>
+              <Mermaid chart={chart} />
+            </BlockIncompleteContext.Provider>
+          </StreamdownContext.Provider>
+        </PluginContext.Provider>
+      );
+
+    it("renders only complete lines until the fence closes", async () => {
+      const { mockRender, pending } = deferredRender();
+      const plugin = createMockMermaidPlugin(mockRender);
+      const tree = withStreamingOptions(plugin);
+      // The code block text ends with a newline even mid-token
+      const cut = "graph TD;\n    A-->B;\n    B--\n";
+
+      const { rerender } = render(tree(cut, true));
+      await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1));
+      expect(pending[0].chart).toBe("graph TD;\n    A-->B;\n");
+
+      await settle(() => pending[0].resolve("<svg></svg>"));
+      rerender(tree(cut, false));
+      await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(2));
+      expect(pending[1].chart).toBe(cut);
+    });
+
+    it("shows the loading state while only the first line streams", async () => {
+      const { mockRender } = deferredRender();
+      const plugin = createMockMermaidPlugin(mockRender);
+      const tree = withStreamingOptions(plugin);
+
+      const { container, rerender } = render(tree("graph T\n", true));
+      await waitFor(() =>
+        expect(container.textContent).toContain("Loading diagram...")
+      );
+      expect(mockRender).not.toHaveBeenCalled();
+
+      rerender(tree("graph TD;\n", false));
+      await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1));
+    });
+
+    it("spaces renders at least minInterval apart", async () => {
+      const renderMs = 20;
+      const minInterval = 200;
+      const { mockRender, started } = timedRender(renderMs);
+      const plugin = createMockMermaidPlugin(mockRender);
+      const tree = withStreamingOptions(plugin, { minInterval });
+      const charts = streamed(16);
+
+      const { rerender } = render(tree(charts[0], true));
+      await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1));
+      for (const chart of charts.slice(1)) {
+        await wait(40);
+        rerender(tree(chart, true));
+      }
+      await wait(minInterval);
+
+      // Without the option the gap would be twice the 20 ms render
+      expect(started.length).toBeGreaterThan(1);
+      for (let i = 1; i < started.length; i++) {
+        expect(started[i] - started[i - 1]).toBeGreaterThanOrEqual(
+          minInterval - 5
+        );
+      }
+    });
+
+    it("spaces failed parses minInterval apart too", async () => {
+      const minInterval = 150;
+      const started: number[] = [];
+      const mockRender = vi.fn(() => {
+        started.push(performance.now());
+        return Promise.reject(new Error("Parse error"));
+      });
+      const plugin = createMockMermaidPlugin(mockRender);
+      const tree = withStreamingOptions(plugin, { minInterval });
+      const charts = streamed(8);
+
+      const { rerender } = render(tree(charts[0], true));
+      await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1));
+      for (const chart of charts.slice(1)) {
+        await wait(30);
+        rerender(tree(chart, true));
+      }
+      await wait(minInterval);
+
+      expect(started.length).toBeGreaterThan(1);
+      for (let i = 1; i < started.length; i++) {
+        expect(started[i] - started[i - 1]).toBeGreaterThanOrEqual(
+          minInterval - 5
+        );
+      }
+    });
+
+    it("renders once the fence closes with renderOnClose", async () => {
+      const { mockRender, pending } = deferredRender();
+      const plugin = createMockMermaidPlugin(mockRender);
+      const tree = withStreamingOptions(plugin, { renderOnClose: true });
+      const charts = streamed(5);
+
+      const { container, rerender } = render(tree(charts[0], true));
+      for (const chart of charts.slice(1)) {
+        rerender(tree(chart, true));
+      }
+      await waitFor(() =>
+        expect(container.textContent).toContain("Loading diagram...")
+      );
+      expect(mockRender).not.toHaveBeenCalled();
+
+      rerender(tree(charts.at(-1) ?? "", false));
+      await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1));
+      expect(pending[0].chart).toBe(charts.at(-1));
+    });
+
+    it("does not re-render for a new inline options object", async () => {
+      const { mockRender, pending } = deferredRender();
+      const plugin = createMockMermaidPlugin(mockRender);
+      const chart = streamed(1)[0];
+
+      const { rerender } = render(
+        withStreamingOptions(plugin, { minInterval: 100 })(chart, false)
+      );
+      await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1));
+      await settle(() => pending[0].resolve("<svg></svg>"));
+
+      rerender(
+        withStreamingOptions(plugin, { minInterval: 100 })(chart, false)
+      );
+      await wait(20);
+      expect(mockRender).toHaveBeenCalledTimes(1);
     });
   });
 });
