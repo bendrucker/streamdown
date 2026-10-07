@@ -7,6 +7,7 @@ import type { MermaidConfig } from "../plugin-types";
 import { useCn } from "../prefix-context";
 import { useTranslations } from "../translations-context";
 import { save } from "../utils";
+import { renderMermaid } from "./render-cache";
 import { serializeSvgForDownload, svgToPngBlob } from "./utils";
 
 interface MermaidDownloadDropdownProps {
@@ -52,16 +53,7 @@ export const MermaidDownloadDropdown = ({
         return;
       }
 
-      const mermaid = mermaidPlugin.getMermaid(config);
-
-      // Use a stable ID based on chart content hash and timestamp to ensure uniqueness
-      const chartHash = chart.split("").reduce((acc, char) => {
-        // biome-ignore lint/suspicious/noBitwiseOperators: "Required for Mermaid"
-        return ((acc << 5) - acc + char.charCodeAt(0)) | 0;
-      }, 0);
-      const uniqueId = `mermaid-${Math.abs(chartHash)}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-      const { svg } = await mermaid.render(uniqueId, chart);
+      const svg = await renderMermaid(mermaidPlugin, chart, config);
       // For SVG and PNG, we need to extract the rendered SVG
 
       if (!svg) {

@@ -7,6 +7,7 @@ import type { MermaidConfig } from "../plugin-types";
 import { useCn } from "../prefix-context";
 import { useTranslations } from "../translations-context";
 import { PanZoom } from "./pan-zoom";
+import { forgetMermaidRender, renderMermaid } from "./render-cache";
 import { getMermaidSvgSize, normalizeMermaidInlineSvg } from "./utils";
 
 interface MermaidProps {
@@ -30,6 +31,8 @@ const pause = (ms: number, onWake: (wake: () => void) => void) =>
 interface RenderRequest {
   chart: string;
   config?: MermaidConfig;
+  // Whether the chart's fence was still open when it was requested
+  streaming: boolean;
 }
 
 type RenderOutcome =
@@ -43,17 +46,7 @@ const renderChart = async (
   fallbackError: string
 ): Promise<RenderOutcome> => {
   try {
-    // Get mermaid instance from plugin
-    const mermaid = plugin.getMermaid(config);
-
-    // Use a stable ID based on chart content hash and timestamp to ensure uniqueness
-    const chartHash = chart.split("").reduce((acc, char) => {
-      // biome-ignore lint/suspicious/noBitwiseOperators: "Required for Mermaid"
-      return ((acc << 5) - acc + char.charCodeAt(0)) | 0;
-    }, 0);
-    const uniqueId = `mermaid-${Math.abs(chartHash)}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-    const { svg } = await mermaid.render(uniqueId, chart);
+    const svg = await renderMermaid(plugin, chart, config);
     const size = getMermaidSvgSize(svg);
     return {
       ok: true,
@@ -101,6 +94,7 @@ export const Mermaid = ({
   // render runs at a time here; when it settles, the latest chart is rendered
   // if it changed meanwhile, and the ones in between are skipped.
   const latestRequestRef = useRef<RenderRequest | null>(null);
+  const shownRequestRef = useRef<RenderRequest | null>(null);
   const inFlightRef = useRef(false);
   const mountedRef = useRef(false);
   const isStreaming = useIsCodeFenceIncomplete();
@@ -149,7 +143,7 @@ export const Mermaid = ({
       return;
     }
 
-    latestRequestRef.current = { chart, config };
+    latestRequestRef.current = { chart, config, streaming: isStreaming };
     if (inFlightRef.current) {
       // The running loop picks up the latest request when it settles
       return;
@@ -157,6 +151,13 @@ export const Mermaid = ({
 
     const commit = (request: RenderRequest, rendered: RenderOutcome) => {
       if (rendered.ok) {
+        // A partial chart the stream has since extended won't be shown
+        // again, so it shouldn't take a slot in the render cache
+        const shown = shownRequestRef.current;
+        if (shown?.streaming && shown.chart !== request.chart) {
+          forgetMermaidRender(mermaidPlugin, shown.chart, shown.config);
+        }
+        shownRequestRef.current = request;
         // Update both current and last valid SVG
         setSvgContent(rendered.svg);
         setSvgSize(rendered.size);
