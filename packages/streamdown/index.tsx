@@ -1,5 +1,6 @@
 "use client";
 
+import { dequal } from "dequal/lite";
 import {
   type ComponentProps,
   type ComponentType,
@@ -20,6 +21,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import remend, { type RemendOptions } from "remend";
 import type { Pluggable } from "unified";
+import { useStableValue } from "./hooks/use-stable-value";
 import {
   type AnimateOptions,
   type AnimatePlugin,
@@ -794,30 +796,38 @@ export const Streamdown = memo(
       }
     });
 
+    // Keep option references stable across renders where their contents are
+    // unchanged, so inline objects don't produce a new context value on every
+    // streamed token and re-render every context consumer.
+    const stableShikiTheme = useStableValue(shikiTheme);
+    const stableControls = useStableValue(controls);
+    const stableMermaid = useStableValue(mermaid);
+    const stableLinkSafety = useStableValue(linkSafety);
+
     // Combined context value - single object reduces React tree overhead
     const contextValue = useMemo<StreamdownContextType>(
       () => ({
         codeBlockMaxHeight,
         shikiTheme:
-          shikiTheme ?? plugins?.code?.getThemes() ?? defaultShikiTheme,
-        controls,
+          stableShikiTheme ?? plugins?.code?.getThemes() ?? defaultShikiTheme,
+        controls: stableControls,
         isAnimating,
         lineNumbers,
         mode,
-        mermaid,
-        linkSafety,
+        mermaid: stableMermaid,
+        linkSafety: stableLinkSafety,
         portal,
         tableMaxHeight,
       }),
       [
         codeBlockMaxHeight,
-        shikiTheme,
-        controls,
+        stableShikiTheme,
+        stableControls,
         isAnimating,
         lineNumbers,
         mode,
-        mermaid,
-        linkSafety,
+        stableMermaid,
+        stableLinkSafety,
         portal,
         plugins?.code,
         tableMaxHeight,
@@ -1154,13 +1164,13 @@ export const Streamdown = memo(
   },
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
-    prevProps.shikiTheme === nextProps.shikiTheme &&
+    dequal(prevProps.shikiTheme, nextProps.shikiTheme) &&
     prevProps.isAnimating === nextProps.isAnimating &&
     prevProps.animated === nextProps.animated &&
     prevProps.mode === nextProps.mode &&
     prevProps.plugins === nextProps.plugins &&
     prevProps.className === nextProps.className &&
-    prevProps.linkSafety === nextProps.linkSafety &&
+    dequal(prevProps.linkSafety, nextProps.linkSafety) &&
     prevProps.lineNumbers === nextProps.lineNumbers &&
     prevProps.codeBlockMaxHeight === nextProps.codeBlockMaxHeight &&
     prevProps.tableMaxHeight === nextProps.tableMaxHeight &&
